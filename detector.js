@@ -221,7 +221,7 @@ class AlcorqueDetector {
   async fetchOSMSidewalks(bbox, offsetMeters = 5.0) {
     let rawWays = [];
 
-    const overpassQuery = `[out:json][timeout:12];
+    const overpassQuery = `[out:json][timeout:25];
 (
   way["highway"~"footway|residential|pedestrian|tertiary|unclassified|service|living_street|secondary|primary"](${bbox.minLat},${bbox.minLon},${bbox.maxLat},${bbox.maxLon});
 );
@@ -238,12 +238,43 @@ out skel qt;`;
         throw new Error('0 vías devueltas para este BBOX');
       }
     } catch (err) {
-      console.warn('Overpass API no disponible para este BBOX, generando aceras dinámicas:', err);
-      rawWays = this.generateSyntheticSidewalks(bbox);
+      console.warn('Overpass API no disponible o en timeout para este BBOX, cargando red de aceras precacheada:', err);
+      rawWays = await this.fetchCachedSidewalksFallback(bbox);
     }
 
     // Filtrar calzadas centrales y conservar ÚNICAMENTE líneas de acera
     return this.processSidewalksOnly(rawWays, offsetMeters);
+  }
+
+  async fetchCachedSidewalksFallback(bbox) {
+    try {
+      const resp = await fetch('/gijon_osm_cache.json');
+      if (!resp.ok) throw new Error('Archivo de caché local no disponible');
+      const cacheData = await resp.json();
+      let allWays = [];
+      Object.keys(cacheData).forEach(key => {
+        allWays = allWays.concat(cacheData[key]);
+      });
+
+      // Filtrar vías que caen en el BBOX actual (con un pequeño margen de 0.002 deg)
+      const margin = 0.002;
+      const matchingWays = allWays.filter(w => {
+        return w.coords && w.coords.some(c => {
+          const lat = c[0], lon = c[1];
+          return lat >= (bbox.minLat - margin) && lat <= (bbox.maxLat + margin) &&
+                 lon >= (bbox.minLon - margin) && lon <= (bbox.maxLon + margin);
+        });
+      });
+
+      if (matchingWays.length > 0) {
+        console.log(`✅ Usando ${matchingWays.length} vías reales precacheadas de Gijón`);
+        return matchingWays;
+      }
+    } catch (err) {
+      console.warn('Error accediendo a gijon_osm_cache.json:', err);
+    }
+
+    return this.generateSyntheticSidewalks(bbox);
   }
 
   /**

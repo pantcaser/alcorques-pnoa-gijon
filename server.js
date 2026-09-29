@@ -95,7 +95,9 @@ const server = http.createServer((req, res) => {
     return proxyRequest(targetUrl, req, res);
   }
 
-  // 2. Overpass API Proxy for OSM streets/sidewalks (Multi-Mirror Failover)
+const overpassCache = new Map();
+
+  // 2. Overpass API Proxy for OSM streets/sidewalks (Multi-Mirror Failover & Cache)
   if (pathname.startsWith('/api/proxy/overpass')) {
     const query = parsedUrl.query.data;
     if (!query) {
@@ -103,10 +105,20 @@ const server = http.createServer((req, res) => {
       return res.end(JSON.stringify({ error: 'Missing data query parameter' }));
     }
 
+    if (overpassCache.has(query)) {
+      console.log('⚡ Overpass: Sirviendo de la caché local');
+      res.writeHead(200, {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*'
+      });
+      return res.end(overpassCache.get(query));
+    }
+
     const mirrors = [
       'https://overpass-api.de/api/interpreter',
       'https://overpass.kumi.systems/api/interpreter',
-      'https://overpass.private.coffee/api/interpreter'
+      'https://overpass.private.coffee/api/interpreter',
+      'https://overpass.nchc.org.tw/api/interpreter'
     ];
 
     let mirrorIndex = 0;
@@ -147,11 +159,25 @@ const server = http.createServer((req, res) => {
           return tryNextMirror();
         }
 
-        res.writeHead(200, {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*'
+        let bodyChunks = [];
+        proxyRes.on('data', (chunk) => {
+          bodyChunks.push(chunk);
         });
-        proxyRes.pipe(res, { end: true });
+
+        proxyRes.on('end', () => {
+          const bodyBuffer = Buffer.concat(bodyChunks);
+          if (!res.headersSent) {
+            res.writeHead(200, {
+              'Content-Type': 'application/json',
+              'Access-Control-Allow-Origin': '*'
+            });
+            res.end(bodyBuffer);
+            // Guardar en caché si la respuesta es válida
+            if (bodyBuffer.length > 50) {
+              overpassCache.set(query, bodyBuffer);
+            }
+          }
+        });
       });
 
       proxyReq.on('error', (err) => {
@@ -165,7 +191,7 @@ const server = http.createServer((req, res) => {
       timer = setTimeout(() => {
         proxyReq.destroy();
         if (!res.headersSent) tryNextMirror();
-      }, 6000);
+      }, 12000);
 
       proxyReq.end();
     }
