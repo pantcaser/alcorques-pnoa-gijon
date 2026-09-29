@@ -255,8 +255,24 @@ document.addEventListener('DOMContentLoaded', () => {
       alert(`✅ ¡Guardadas ${res.savedWays} vías de acera permanentemente en disco (gijon_osm_cache.json)! A partir de ahora esta zona cargará en 0 ms de forma local.`);
     } catch (err) {
       alert('Error guardando en disco: ' + err.message);
-      btnSave.textContent = '💾 Guardar Aceras en Disco';
+      btnSave.textContent = '💾 Guardar Aceras';
       btnSave.disabled = false;
+    }
+  });
+
+  // Event listener para borrar/refrescar la caché de aceras
+  document.getElementById('btnClearSidewalkCache').addEventListener('click', async () => {
+    if (!confirm('¿Seguro que quieres borrar la caché local de aceras y forzar recargas frescas de red?')) return;
+    try {
+      const resp = await fetch('/api/osm/clear-cache', { method: 'POST' });
+      if (!resp.ok) throw new Error('Error al borrar la caché');
+      alert('🗑️ Caché de aceras limpia en disco y RAM. Pulsa "Paso 3: Aceras" para volver a descargar datos frescos.');
+      document.getElementById('diskStatusText').textContent = 'Caché eliminada. Pulsa Paso 3 para recargar.';
+      document.getElementById('btnSaveSidewalksToDisk').style.display = 'none';
+      sidewalkLayerGroup.clearLayers();
+      currentOsmWays = [];
+    } catch (err) {
+      alert('Error limpiando caché: ' + err.message);
     }
   });
 

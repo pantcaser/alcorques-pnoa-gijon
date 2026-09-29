@@ -277,6 +277,23 @@ const overpassCache = new Map();
     return;
   }
 
+  if (pathname.startsWith('/api/osm/clear-cache') && req.method === 'POST') {
+    try {
+      overpassCache.clear();
+      const cacheFile = path.join(__dirname, 'gijon_osm_cache.json');
+      const baseSeed = { begona: [], corrida: [], coto: [] };
+      fs.writeFileSync(cacheFile, JSON.stringify(baseSeed, null, 2), 'utf8');
+      console.log('🗑️ Caché de aceras eliminada de disco y memoria RAM');
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'ok', message: 'Caché eliminada con éxito' }));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Error borrando caché: ' + err.message }));
+    }
+    return;
+  }
+
   // 4. Geocoding Proxy (Nominatim / IGN)
   if (pathname.startsWith('/api/proxy/geocode')) {
     const q = parsedUrl.query.q;
