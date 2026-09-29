@@ -305,6 +305,7 @@ document.addEventListener('DOMContentLoaded', () => {
         height: 800,
         ndviThreshold: sens,
         bufferMeters,
+        osmWays: currentOsmWays,
         minAreaM2: 0.2,
         maxAreaM2: 30.0
       });

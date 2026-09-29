@@ -42,9 +42,13 @@ class AlcorqueDetector {
 
     onProgress({ stage: 'OSM_FETCH', percent: 55, message: 'Consultando aceras y vías de OpenStreetMap...' });
 
-    // 4. Obtener vías y aceras de OSM y generar Buffer de Acera
-    const osmResult = await this.fetchOSMSidewalks(bbox);
-    const osmWays = Array.isArray(osmResult) ? osmResult : (osmResult.ways || []);
+    // 4. Obtener vías y aceras de OSM (usar las pasadas en Paso 3 si existen)
+    let osmWays = params.osmWays;
+    if (!osmWays || osmWays.length === 0) {
+      const osmResult = await this.fetchOSMSidewalks(bbox, bufferMeters);
+      osmWays = Array.isArray(osmResult) ? osmResult : (osmResult.ways || []);
+    }
+
     onProgress({ stage: 'BUFFER_INTERSECTION', percent: 75, message: 'Intersectando vegetación con buffer de aceras...' });
 
     const sidewalkBufferMask = this.rasterizeSidewalkBuffer(osmWays, bbox, width, height, scaleInfo, bufferMeters);
@@ -317,7 +321,8 @@ out skel qt;`;
       console.warn('Error accediendo a gijon_osm_cache.json:', err);
     }
 
-    return this.generateSyntheticSidewalks(bbox);
+    // Si no existen aceras reales registradas en esta zona, devolver array vacío para no crear cuadrículas falsas
+    return [];
   }
 
   /**
