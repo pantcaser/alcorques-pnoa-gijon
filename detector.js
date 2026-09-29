@@ -427,10 +427,15 @@ out skel qt;`;
     ctx.fillRect(0, 0, width, height);
 
     ctx.strokeStyle = '#FFFFFF';
-    const lineWidthPx = Math.max(12, (bufferMeters / scaleInfo.mPerPxAvg) * 2);
+    // Ancho del trazo de acera en píxeles ajustado a la escala real m/px
+    const lineWidthPx = Math.max(6, (bufferMeters / scaleInfo.mPerPxAvg));
     ctx.lineWidth = lineWidthPx;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
+
+    const bbox3857 = this.bboxToEPSG3857(bbox);
+    const spanX = bbox3857.maxX - bbox3857.minX;
+    const spanY = bbox3857.maxY - bbox3857.minY;
 
     ways.forEach(way => {
       ctx.beginPath();
@@ -438,9 +443,13 @@ out skel qt;`;
         const lat = coord[0];
         const lon = coord[1];
 
-        // Mapear Lat/Lon a píxeles (0,0 en top-left)
-        const x = ((lon - bbox.minLon) / (bbox.maxLon - bbox.minLon)) * width;
-        const y = ((bbox.maxLat - lat) / (bbox.maxLat - bbox.minLat)) * height;
+        // Mapear Lat/Lon a píxeles usando proyección EPSG:3857 (Web Mercator) exacta para coincidir 1:1 con la ortofoto PNOA
+        const x3857 = (lon * 20037508.34) / 180;
+        const rad = (lat * Math.PI) / 180;
+        const y3857 = (Math.log(Math.tan(Math.PI / 4 + rad / 2)) * 20037508.34) / Math.PI;
+
+        const x = ((x3857 - bbox3857.minX) / spanX) * width;
+        const y = ((bbox3857.maxY - y3857) / spanY) * height;
 
         if (idx === 0) {
           ctx.moveTo(x, y);
@@ -525,9 +534,14 @@ out skel qt;`;
             const centroidY = sumY / pixelCount;
             const avgNdvi = sumNdvi / pixelCount;
 
-            // Convertir píxel a Lat/Lon
-            const lon = bbox.minLon + (centroidX / width) * (bbox.maxLon - bbox.minLon);
-            const lat = bbox.maxLat - (centroidY / height) * (bbox.maxLat - bbox.minLat);
+            // Convertir píxel a Lat/Lon con la proyección EPSG:3857 Web Mercator inversa exacta
+            const bbox3857 = this.bboxToEPSG3857(bbox);
+            const centroidX3857 = bbox3857.minX + (centroidX / width) * (bbox3857.maxX - bbox3857.minX);
+            const centroidY3857 = bbox3857.maxY - (centroidY / height) * (bbox3857.maxY - bbox3857.minY);
+
+            const lon = (centroidX3857 * 180) / 20037508.34;
+            const rad = Math.atan(Math.sinh((centroidY3857 * Math.PI) / 20037508.34));
+            const lat = (rad * 180) / Math.PI;
 
             // Calcular diámetro estimado
             const estimatedDiameterM = Math.sqrt((4 * areaM2) / Math.PI);
