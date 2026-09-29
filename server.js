@@ -261,7 +261,8 @@ const overpassCache = new Map();
         }
 
         const key = payload.zoneName || `zona_${Date.now()}`;
-        cacheObj[key] = payload.ways || [];
+        const cleanWays = (payload.ways || []).filter(w => typeof w.id === 'number' || !String(w.id).includes('-acera-'));
+        cacheObj[key] = cleanWays.length > 0 ? cleanWays : payload.ways;
 
         fs.writeFileSync(cacheFile, JSON.stringify(cacheObj, null, 2), 'utf8');
         console.log(`💾 Guardadas ${payload.ways.length} vías en disco (clave: ${key})`);

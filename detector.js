@@ -334,6 +334,12 @@ out skel qt;`;
     rawWays.forEach(w => {
       const wtype = w.type || 'residential';
 
+      // Si la vía YA es una acera/bordillo procesada previa, NO volver a aplicar offset 5m
+      if (wtype === 'acera_bordillo' || String(w.id).includes('-acera-') || w.isExplicit) {
+        sidewalkWays.push({ ...w, isExplicit: true });
+        return;
+      }
+
       // Descartar vías de servicio internas, pasadizos privados y accesos a garajes/patios
       if (['service', 'track', 'service_link', 'driveway', 'parking_aisle'].includes(wtype)) {
         return;
