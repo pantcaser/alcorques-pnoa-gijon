@@ -204,8 +204,23 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('lblStepTitle').textContent = '🛣️ Paso 3: Calculando líneas de acera de OSM...';
 
     try {
-      currentOsmWays = await detector.fetchOSMSidewalks(bbox, bufferMeters);
+      const result = await detector.fetchOSMSidewalks(bbox, bufferMeters);
+      currentOsmWays = result.ways || [];
       renderSidewalksOnMap(currentOsmWays, bufferMeters);
+
+      // Actualizar Widget Flotante de Estado de Disco
+      const diskStatusText = document.getElementById('diskStatusText');
+      const btnSaveDisk = document.getElementById('btnSaveSidewalksToDisk');
+
+      if (result.source === 'disk') {
+        diskStatusText.innerHTML = `⚡ <span style="color:#34d399;">Datos Locales en Disco</span> (${currentOsmWays.length} aceras)`;
+        btnSaveDisk.style.display = 'none';
+      } else {
+        diskStatusText.innerHTML = `🌐 <span style="color:#fbbf24;">Descargado de Red (Overpass)</span> (${currentOsmWays.length} vías)`;
+        btnSaveDisk.style.display = 'inline-block';
+        btnSaveDisk.textContent = '💾 Guardar Aceras en Disco';
+        btnSaveDisk.disabled = false;
+      }
 
       // Activar Paso 4
       const btnPoints = document.getElementById('btnStepPoints');
@@ -219,6 +234,28 @@ document.addEventListener('DOMContentLoaded', () => {
       console.error('Error en Paso 3:', err);
     }
   }
+
+  // Event listener para guardar aceras en disco
+  document.getElementById('btnSaveSidewalksToDisk').addEventListener('click', async () => {
+    const btnSave = document.getElementById('btnSaveSidewalksToDisk');
+    const diskStatusText = document.getElementById('diskStatusText');
+    btnSave.textContent = '⏳ Guardando en disco...';
+    btnSave.disabled = true;
+
+    try {
+      const selectedPreset = document.getElementById('presetSelect').value || 'zona';
+      const zoneName = `${selectedPreset}_${Date.now()}`;
+      const res = await detector.saveSidewalksToDisk(zoneName);
+
+      diskStatusText.innerHTML = `⚡ <span style="color:#34d399;">Guardado en Disco Exitosamente</span>`;
+      btnSave.style.display = 'none';
+      alert(`✅ ¡Guardadas ${res.savedWays} vías de acera permanentemente en disco (gijon_osm_cache.json)! A partir de ahora esta zona cargará en 0 ms de forma local.`);
+    } catch (err) {
+      alert('Error guardando en disco: ' + err.message);
+      btnSave.textContent = '💾 Guardar Aceras en Disco';
+      btnSave.disabled = false;
+    }
+  });
 
   function renderSidewalksOnMap(ways, bufferMeters) {
     sidewalkLayerGroup.clearLayers();

@@ -43,7 +43,8 @@ class AlcorqueDetector {
     onProgress({ stage: 'OSM_FETCH', percent: 55, message: 'Consultando aceras y vías de OpenStreetMap...' });
 
     // 4. Obtener vías y aceras de OSM y generar Buffer de Acera
-    const osmWays = await this.fetchOSMSidewalks(bbox);
+    const osmResult = await this.fetchOSMSidewalks(bbox);
+    const osmWays = Array.isArray(osmResult) ? osmResult : (osmResult.ways || []);
     onProgress({ stage: 'BUFFER_INTERSECTION', percent: 75, message: 'Intersectando vegetación con buffer de aceras...' });
 
     const sidewalkBufferMask = this.rasterizeSidewalkBuffer(osmWays, bbox, width, height, scaleInfo, bufferMeters);
@@ -220,8 +221,26 @@ class AlcorqueDetector {
    */
   async fetchOSMSidewalks(bbox, offsetMeters = 5.0) {
     let rawWays = [];
+    let source = 'overpass';
 
-    const overpassQuery = `[out:json][timeout:25];
+    // 1. Prioridad: Intentar cargar desde el archivo en DISCO local primero
+    try {
+      const diskResp = await fetch(`/api/osm/local-sidewalks?minLat=${bbox.minLat}&minLon=${bbox.minLon}&maxLat=${bbox.maxLat}&maxLon=${bbox.maxLon}`);
+      if (diskResp.ok) {
+        const diskData = await diskResp.json();
+        if (diskData.ways && diskData.ways.length > 0) {
+          console.log(`⚡ Cargadas ${diskData.ways.length} vías desde la caché local en DISCO`);
+          rawWays = diskData.ways;
+          source = 'disk';
+        }
+      }
+    } catch (e) {
+      console.warn('No se pudo verificar la caché en disco:', e);
+    }
+
+    // 2. Si no están en disco, descargar desde Overpass API
+    if (!rawWays || rawWays.length === 0) {
+      const overpassQuery = `[out:json][timeout:25];
 (
   way["highway"~"footway|residential|pedestrian|tertiary|unclassified|service|living_street|secondary|primary"](${bbox.minLat},${bbox.minLon},${bbox.maxLat},${bbox.maxLon});
 );
@@ -229,21 +248,45 @@ out body;
 >;
 out skel qt;`;
 
-    try {
-      const resp = await fetch(`/api/proxy/overpass?data=${encodeURIComponent(overpassQuery)}`);
-      if (!resp.ok) throw new Error(`Overpass HTTP ${resp.status}`);
-      const data = await resp.json();
-      rawWays = this.parseOSMWays(data);
-      if (!rawWays || rawWays.length === 0) {
-        throw new Error('0 vías devueltas para este BBOX');
+      try {
+        const resp = await fetch(`/api/proxy/overpass?data=${encodeURIComponent(overpassQuery)}`);
+        if (!resp.ok) throw new Error(`Overpass HTTP ${resp.status}`);
+        const data = await resp.json();
+        rawWays = this.parseOSMWays(data);
+        if (!rawWays || rawWays.length === 0) {
+          throw new Error('0 vías devueltas para este BBOX');
+        }
+        source = 'network';
+      } catch (err) {
+        console.warn('Overpass API no disponible o en timeout, cargando reserva de aceras:', err);
+        rawWays = await this.fetchCachedSidewalksFallback(bbox);
+        source = 'fallback';
       }
-    } catch (err) {
-      console.warn('Overpass API no disponible o en timeout para este BBOX, cargando red de aceras precacheada:', err);
-      rawWays = await this.fetchCachedSidewalksFallback(bbox);
     }
 
-    // Filtrar calzadas centrales y conservar ÚNICAMENTE líneas de acera
-    return this.processSidewalksOnly(rawWays, offsetMeters);
+    this.lastFetchedRawWays = rawWays;
+    this.lastFetchedSource = source;
+
+    // 3. Filtrar calzadas centrales y conservar ÚNICAMENTE líneas de acera
+    const processedWays = this.processSidewalksOnly(rawWays, offsetMeters);
+    return {
+      ways: processedWays,
+      rawWays,
+      source
+    };
+  }
+
+  async saveSidewalksToDisk(zoneName, ways) {
+    const targetWays = ways || this.lastFetchedRawWays || [];
+    if (!targetWays.length) throw new Error('No hay aceras cargadas para guardar');
+
+    const resp = await fetch('/api/osm/save-sidewalks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ zoneName, ways: targetWays })
+    });
+    if (!resp.ok) throw new Error(`Error HTTP ${resp.status} al guardar en disco`);
+    return await resp.json();
   }
 
   async fetchCachedSidewalksFallback(bbox) {

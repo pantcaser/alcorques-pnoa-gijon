@@ -200,7 +200,83 @@ const overpassCache = new Map();
     return;
   }
 
-  // 3. Geocoding Proxy (Nominatim / IGN)
+  // 3. Local OSM Disk Cache Endpoints (GET and POST)
+  if (pathname.startsWith('/api/osm/local-sidewalks')) {
+    const minLat = parseFloat(parsedUrl.query.minLat);
+    const minLon = parseFloat(parsedUrl.query.minLon);
+    const maxLat = parseFloat(parsedUrl.query.maxLat);
+    const maxLon = parseFloat(parsedUrl.query.maxLon);
+
+    const cacheFile = path.join(__dirname, 'gijon_osm_cache.json');
+    fs.readFile(cacheFile, 'utf8', (err, rawData) => {
+      if (err) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ source: 'disk', count: 0, ways: [] }));
+      }
+
+      try {
+        const cacheObj = JSON.parse(rawData);
+        let allWays = [];
+        Object.keys(cacheObj).forEach(key => {
+          if (Array.isArray(cacheObj[key])) {
+            allWays = allWays.concat(cacheObj[key]);
+          }
+        });
+
+        const margin = 0.0015;
+        const matchingWays = allWays.filter(w => {
+          return w.coords && w.coords.some(c => {
+            const lat = c[0], lon = c[1];
+            return lat >= (minLat - margin) && lat <= (maxLat + margin) &&
+                   lon >= (minLon - margin) && lon <= (maxLon + margin);
+          });
+        });
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          source: 'disk',
+          count: matchingWays.length,
+          ways: matchingWays
+        }));
+      } catch (e) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Error leyendo caché de disco' }));
+      }
+    });
+    return;
+  }
+
+  if (pathname.startsWith('/api/osm/save-sidewalks') && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', () => {
+      try {
+        const payload = JSON.parse(body);
+        const cacheFile = path.join(__dirname, 'gijon_osm_cache.json');
+
+        let cacheObj = {};
+        if (fs.existsSync(cacheFile)) {
+          const raw = fs.readFileSync(cacheFile, 'utf8');
+          try { cacheObj = JSON.parse(raw); } catch (e) {}
+        }
+
+        const key = payload.zoneName || `zona_${Date.now()}`;
+        cacheObj[key] = payload.ways || [];
+
+        fs.writeFileSync(cacheFile, JSON.stringify(cacheObj, null, 2), 'utf8');
+        console.log(`💾 Guardadas ${payload.ways.length} vías en disco (clave: ${key})`);
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'ok', zoneKey: key, savedWays: payload.ways.length }));
+      } catch (err) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Payload JSON inválido: ' + err.message }));
+      }
+    });
+    return;
+  }
+
+  // 4. Geocoding Proxy (Nominatim / IGN)
   if (pathname.startsWith('/api/proxy/geocode')) {
     const q = parsedUrl.query.q;
     if (!q) {
