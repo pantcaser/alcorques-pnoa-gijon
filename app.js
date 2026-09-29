@@ -328,16 +328,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
       detectedBlobs = result.blobs;
       detectedBlobs.forEach(b => {
-        b.userStatus = 'VALIDO'; // Por defecto VÁLIDO
+        b.userStatus = 'PENDIENTE'; // Por defecto PENDIENTE de validación
       });
 
       renderAlcorquesOnMap(detectedBlobs);
       updateValidationStats();
 
       document.getElementById('lblStepTitle').textContent = `🎯 Paso 4 Completado: ${detectedBlobs.length} alcorques detectados`;
-      document.getElementById('lblStepDesc').textContent = 'Haz clic en cualquier punto del mapa para abrir el inspector de alta resolución (6.7 cm/px) y validar a ojo.';
+      document.getElementById('lblStepDesc').textContent = 'Haz clic en cualquier punto o presiona 1/2/3 (o V/D/X) para validar rápidamente cada alcorque.';
 
-      // Abrir el primer alcorque en el inspector
+      // Abrir el primer alcorque pendiente en el inspector
       if (detectedBlobs.length > 0) {
         openInspectorForBlob(detectedBlobs[0]);
       }
@@ -355,7 +355,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const isSelected = currentSelectedBlob && currentSelectedBlob.id === b.id;
 
       if (isSelected) {
-        // Halo exterior intermitente para el alcorque activo
+        // Halo exterior para el alcorque activo
         const haloMarker = L.circleMarker([b.lat, b.lon], {
           radius: 18,
           fillColor: 'transparent',
@@ -365,7 +365,7 @@ document.addEventListener('DOMContentLoaded', () => {
           opacity: 1
         });
 
-        // Marcador destacado (Cian Neón, radio 13px, al frente de todos)
+        // Marcador destacado (Cian Neón 13px al frente de todos)
         const selectedMarker = L.circleMarker([b.lat, b.lon], {
           radius: 13,
           fillColor: '#00f0ff',
@@ -381,9 +381,10 @@ document.addEventListener('DOMContentLoaded', () => {
         alcorquesLayerGroup.addLayer(selectedMarker);
         selectedMarker.bringToFront();
       } else {
-        let color = '#34d399'; // Verde Válido
-        if (b.userStatus === 'DUDA') color = '#fbbf24';
-        if (b.userStatus === 'NO_ES') color = '#f87171';
+        let color = '#38bdf8'; // Azul Claro: Pendiente
+        if (b.userStatus === 'VALIDO') color = '#34d399'; // Verde: Válido
+        if (b.userStatus === 'DUDA') color = '#fbbf24';   // Amarillo: Duda
+        if (b.userStatus === 'NO_ES') color = '#f87171';  // Rojo: Descartado
 
         const marker = L.circleMarker([b.lat, b.lon], {
           radius: 7,
@@ -452,7 +453,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  function setValidationStatus(status, autoAdvance = false) {
+  function setValidationStatus(status, autoAdvance = true) {
     if (!currentSelectedBlob) return;
     currentSelectedBlob.userStatus = status;
     updateValidationButtonsUI(status);
@@ -460,7 +461,32 @@ document.addEventListener('DOMContentLoaded', () => {
     updateValidationStats();
 
     if (autoAdvance) {
-      navigateInspector(1);
+      navigateToNextUncataloged();
+    }
+  }
+
+  function navigateToNextUncataloged() {
+    if (!currentSelectedBlob || !detectedBlobs.length) return;
+
+    const currentIndex = detectedBlobs.findIndex(b => b.id === currentSelectedBlob.id);
+    let nextBlob = null;
+
+    // Buscar el siguiente alcorque PENDIENTE a partir del actual
+    for (let i = 1; i <= detectedBlobs.length; i++) {
+      const idx = (currentIndex + i) % detectedBlobs.length;
+      if (detectedBlobs[idx].userStatus === 'PENDIENTE') {
+        nextBlob = detectedBlobs[idx];
+        break;
+      }
+    }
+
+    if (nextBlob) {
+      openInspectorForBlob(nextBlob);
+    } else {
+      document.getElementById('lblStepTitle').textContent = '🎉 ¡Todos los alcorques catalogados!';
+      document.getElementById('lblStepDesc').textContent = 'Has revisado todos los alcorques de esta zona. Puedes exportar el resultado en GeoJSON.';
+      const nextIndex = (currentIndex + 1) % detectedBlobs.length;
+      openInspectorForBlob(detectedBlobs[nextIndex]);
     }
   }
 
@@ -479,13 +505,19 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function updateValidationStats() {
+    const pending = detectedBlobs.filter(b => b.userStatus === 'PENDIENTE').length;
     const valid = detectedBlobs.filter(b => b.userStatus === 'VALIDO').length;
     const doubt = detectedBlobs.filter(b => b.userStatus === 'DUDA').length;
     const rej = detectedBlobs.filter(b => b.userStatus === 'NO_ES').length;
 
-    document.getElementById('valCount').textContent = `${valid} Válidos`;
-    document.getElementById('doubtCount').textContent = `${doubt} Duda`;
-    document.getElementById('rejCount').textContent = `${rej} Descartados`;
+    const statsElem = document.getElementById('kpiStats');
+    if (statsElem) {
+      statsElem.innerHTML =
+        `<span style="color:#38bdf8;">${pending} Pendientes</span> | ` +
+        `<span style="color:#34d399;">${valid} Válidos</span> | ` +
+        `<span style="color:#fbbf24;">${doubt} Duda</span> | ` +
+        `<span style="color:#f87171;">${rej} Descartados</span>`;
+    }
   }
 
   function closeInspector() {
