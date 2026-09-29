@@ -20,6 +20,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // 2. Cargar Presets de Gijón
   initPresets();
 
+  // 3. Hacer el inspector arrastrable
+  initDraggableInspector();
+
   // 3. Eventos Paso 2, 3 y 4
   document.getElementById('btnStepVeg').addEventListener('click', runStep2Vegetation);
   document.getElementById('btnStepOsm').addEventListener('click', runStep3Sidewalks);
@@ -332,29 +335,57 @@ document.addEventListener('DOMContentLoaded', () => {
     alcorquesLayerGroup.clearLayers();
 
     blobs.forEach(b => {
-      let color = '#34d399'; // Verde Válido
-      if (b.userStatus === 'DUDA') color = '#fbbf24';
-      if (b.userStatus === 'NO_ES') color = '#f87171';
+      const isSelected = currentSelectedBlob && currentSelectedBlob.id === b.id;
 
-      const marker = L.circleMarker([b.lat, b.lon], {
-        radius: 7,
-        fillColor: color,
-        color: '#ffffff',
-        weight: 2,
-        opacity: 1,
-        fillOpacity: 0.9
-      });
+      if (isSelected) {
+        // Halo exterior intermitente para el alcorque activo
+        const haloMarker = L.circleMarker([b.lat, b.lon], {
+          radius: 18,
+          fillColor: 'transparent',
+          color: '#00f0ff',
+          weight: 2,
+          dashArray: '5, 5',
+          opacity: 1
+        });
 
-      marker.on('click', () => {
-        openInspectorForBlob(b);
-      });
+        // Marcador destacado (Cian Neón, radio 13px, al frente de todos)
+        const selectedMarker = L.circleMarker([b.lat, b.lon], {
+          radius: 13,
+          fillColor: '#00f0ff',
+          color: '#ffffff',
+          weight: 4,
+          opacity: 1,
+          fillOpacity: 1
+        });
 
-      alcorquesLayerGroup.addLayer(marker);
+        selectedMarker.on('click', () => openInspectorForBlob(b));
+
+        alcorquesLayerGroup.addLayer(haloMarker);
+        alcorquesLayerGroup.addLayer(selectedMarker);
+        selectedMarker.bringToFront();
+      } else {
+        let color = '#34d399'; // Verde Válido
+        if (b.userStatus === 'DUDA') color = '#fbbf24';
+        if (b.userStatus === 'NO_ES') color = '#f87171';
+
+        const marker = L.circleMarker([b.lat, b.lon], {
+          radius: 7,
+          fillColor: color,
+          color: '#ffffff',
+          weight: 2,
+          opacity: 1,
+          fillOpacity: 0.9
+        });
+
+        marker.on('click', () => openInspectorForBlob(b));
+        alcorquesLayerGroup.addLayer(marker);
+      }
     });
   }
 
   async function openInspectorForBlob(blob) {
     currentSelectedBlob = blob;
+    renderAlcorquesOnMap(detectedBlobs);
 
     const panel = document.getElementById('inspectorPanel');
     panel.style.display = 'flex';
@@ -443,6 +474,52 @@ document.addEventListener('DOMContentLoaded', () => {
   function closeInspector() {
     document.getElementById('inspectorPanel').style.display = 'none';
     currentSelectedBlob = null;
+    renderAlcorquesOnMap(detectedBlobs);
+  }
+
+  function initDraggableInspector() {
+    const header = document.getElementById('inspectorHeader');
+    const panel = document.getElementById('inspectorPanel');
+    if (!header || !panel) return;
+
+    let isDragging = false;
+    let startX = 0, startY = 0, initialLeft = 0, initialTop = 0;
+
+    header.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('#btnCloseInspector')) return;
+
+      isDragging = true;
+      startX = e.clientX;
+      startY = e.clientY;
+
+      const rect = panel.getBoundingClientRect();
+      initialLeft = rect.left;
+      initialTop = rect.top;
+
+      panel.style.right = 'auto';
+      panel.style.left = `${initialLeft}px`;
+      panel.style.top = `${initialTop}px`;
+
+      try { header.setPointerCapture(e.pointerId); } catch(ex) {}
+    });
+
+    header.addEventListener('pointermove', (e) => {
+      if (!isDragging) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      panel.style.left = `${initialLeft + dx}px`;
+      panel.style.top = `${initialTop + dy}px`;
+    });
+
+    const stopDrag = (e) => {
+      if (isDragging) {
+        isDragging = false;
+        try { header.releasePointerCapture(e.pointerId); } catch(ex) {}
+      }
+    };
+
+    header.addEventListener('pointerup', stopDrag);
+    header.addEventListener('pointercancel', stopDrag);
   }
 
   // Atajos de teclado para la validación ágil

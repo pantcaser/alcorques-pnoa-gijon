@@ -553,6 +553,12 @@ input:checked + .slider-toggle:before {
   align-items: center;
   border-bottom: 1px solid var(--border-color);
   padding-bottom: 10px;
+  cursor: grab;
+  user-select: none;
+}
+
+.inspector-header:active {
+  cursor: grabbing;
 }
 
 .inspector-header h3 {
