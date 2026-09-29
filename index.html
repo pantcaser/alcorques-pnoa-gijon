@@ -92,9 +92,15 @@
 
         <!-- Botones de Validación Manual por Ojo -->
         <div class="validation-buttons">
-          <button id="btnValid" class="btn-val btn-valid">✅ Válido (Árbol)</button>
-          <button id="btnDoubt" class="btn-val btn-doubt">⚠️ Duda (Sombra)</button>
-          <button id="btnReject" class="btn-val btn-reject">❌ No es Alcorque</button>
+          <button id="btnValid" class="btn-val btn-valid" title="Atajo: tecla 1 o V">✅ [1] Válido</button>
+          <button id="btnDoubt" class="btn-val btn-doubt" title="Atajo: tecla 2 o D">⚠️ [2] Duda</button>
+          <button id="btnReject" class="btn-val btn-reject" title="Atajo: tecla 3 o X">❌ [3] No es</button>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; margin-top: 10px; font-size: 0.75rem; color: #94a3b8; align-items: center;">
+          <button id="btnPrevBlob" class="btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;">⬅️ Anterior [←]</button>
+          <span>Teclas: <strong>1/2/3</strong> o <strong>V/D/X</strong></span>
+          <button id="btnNextBlob" class="btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;">Siguiente [→] ➡️</button>
         </div>
       </div>
     </div>

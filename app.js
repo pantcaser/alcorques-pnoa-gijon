@@ -30,6 +30,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btnValid').addEventListener('click', () => setValidationStatus('VALIDO'));
   document.getElementById('btnDoubt').addEventListener('click', () => setValidationStatus('DUDA'));
   document.getElementById('btnReject').addEventListener('click', () => setValidationStatus('NO_ES'));
+  document.getElementById('btnPrevBlob').addEventListener('click', () => navigateInspector(-1));
+  document.getElementById('btnNextBlob').addEventListener('click', () => navigateInspector(1));
 
   // Export Button
   document.getElementById('btnExportGeoJSON').addEventListener('click', () => {
@@ -99,28 +101,7 @@ document.addEventListener('DOMContentLoaded', () => {
     sidewalkLayerGroup.addTo(map);
     alcorquesLayerGroup.addTo(map);
 
-    // Sincronización al desplazar el mapa: Limpiar capas anteriores y coordinar vista
-    map.on('moveend', () => {
-      // Si la nueva vista se desvía del cálculo anterior, reiniciar capas antiguas
-      if (currentOsmWays.length > 0 || detectedBlobs.length > 0) {
-        sidewalkLayerGroup.clearLayers();
-        alcorquesLayerGroup.clearLayers();
-        if (ndviImageOverlay) {
-          map.removeLayer(ndviImageOverlay);
-          ndviImageOverlay = null;
-        }
-        currentOsmWays = [];
-        detectedBlobs = [];
-        closeInspector();
-
-        document.getElementById('lblStepTitle').textContent = '📍 Mapa desplazado a nueva vista';
-        document.getElementById('lblStepDesc').textContent = 'Pulsa "Paso 2: Vegetación" o "Paso 3: Aceras" para procesar la nueva zona visible.';
-        
-        // Mantener activado Paso 2
-        document.getElementById('btnStepOsm').disabled = false;
-        document.getElementById('btnStepPoints').disabled = false;
-      }
-    });
+    // Nota: Las capas calculadas (NDVI, aceras, alcorques) se conservan al desplazar o hacer zoom en el mapa.
   }
 
   /**
@@ -348,8 +329,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     updateValidationButtonsUI(blob.userStatus);
 
-    map.panTo([blob.lat, blob.lon]);
-
     const cropBbox = {
       minLat: blob.lat - 0.00006,
       minLon: blob.lon - 0.00008,
@@ -388,12 +367,24 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  function setValidationStatus(status) {
+  function setValidationStatus(status, autoAdvance = false) {
     if (!currentSelectedBlob) return;
     currentSelectedBlob.userStatus = status;
     updateValidationButtonsUI(status);
     renderAlcorquesOnMap(detectedBlobs);
     updateValidationStats();
+
+    if (autoAdvance) {
+      navigateInspector(1);
+    }
+  }
+
+  function navigateInspector(direction) {
+    if (!currentSelectedBlob || !detectedBlobs.length) return;
+    const currentIndex = detectedBlobs.findIndex(b => b.id === currentSelectedBlob.id);
+    if (currentIndex === -1) return;
+    const nextIndex = (currentIndex + direction + detectedBlobs.length) % detectedBlobs.length;
+    openInspectorForBlob(detectedBlobs[nextIndex]);
   }
 
   function updateValidationButtonsUI(status) {
@@ -416,4 +407,25 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('inspectorPanel').style.display = 'none';
     currentSelectedBlob = null;
   }
+
+  // Atajos de teclado para la validación ágil
+  document.addEventListener('keydown', (e) => {
+    // Si hay un inspector abierto
+    const panel = document.getElementById('inspectorPanel');
+    if (panel && panel.style.display !== 'none') {
+      if (e.key === '1' || e.key.toLowerCase() === 'v') {
+        setValidationStatus('VALIDO', true);
+      } else if (e.key === '2' || e.key.toLowerCase() === 'd') {
+        setValidationStatus('DUDA', true);
+      } else if (e.key === '3' || e.key.toLowerCase() === 'x') {
+        setValidationStatus('NO_ES', true);
+      } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+        navigateInspector(1);
+      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+        navigateInspector(-1);
+      } else if (e.key === 'Escape') {
+        closeInspector();
+      }
+    }
+  });
 });
