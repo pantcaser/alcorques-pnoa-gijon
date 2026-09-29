@@ -333,12 +333,18 @@ out skel qt;`;
 
     rawWays.forEach(w => {
       const wtype = w.type || 'residential';
+
+      // Descartar vías de servicio internas, pasadizos privados y accesos a garajes/patios
+      if (['service', 'track', 'service_link', 'driveway', 'parking_aisle'].includes(wtype)) {
+        return;
+      }
+
       const isExplicitSidewalk = ['footway', 'pedestrian', 'path', 'steps', 'sidewalk'].includes(wtype);
 
       if (isExplicitSidewalk) {
-        sidewalkWays.push(w);
+        sidewalkWays.push({ ...w, isExplicit: true });
       } else if (w.coords && w.coords.length >= 2) {
-        // Separar eje de calzada en 2 líneas paralelas de acera (bordillos izquierda y derecha)
+        // Separar eje de calzada pública en 2 líneas paralelas de acera (bordillos izquierda y derecha)
         const leftCoords = [];
         const rightCoords = [];
 
@@ -373,10 +379,10 @@ out skel qt;`;
         }
 
         if (leftCoords.length > 1) {
-          sidewalkWays.push({ id: `${w.id}-acera-izq`, type: 'acera_bordillo', coords: leftCoords });
+          sidewalkWays.push({ id: `${w.id}-acera-izq`, type: 'acera_bordillo', coords: leftCoords, isExplicit: false });
         }
         if (rightCoords.length > 1) {
-          sidewalkWays.push({ id: `${w.id}-acera-der`, type: 'acera_bordillo', coords: rightCoords });
+          sidewalkWays.push({ id: `${w.id}-acera-der`, type: 'acera_bordillo', coords: rightCoords, isExplicit: false });
         }
       }
     });
@@ -426,10 +432,6 @@ out skel qt;`;
     ctx.fillStyle = '#000000';
     ctx.fillRect(0, 0, width, height);
 
-    ctx.strokeStyle = '#FFFFFF';
-    // Ancho del trazo de acera en píxeles ajustado a la escala real m/px
-    const lineWidthPx = Math.max(6, (bufferMeters / scaleInfo.mPerPxAvg));
-    ctx.lineWidth = lineWidthPx;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
@@ -437,13 +439,19 @@ out skel qt;`;
     const spanX = bbox3857.maxX - bbox3857.minX;
     const spanY = bbox3857.maxY - bbox3857.minY;
 
+    // Ancho de trazo estándar para aceras públicas (m/px)
+    const baseLineWidthPx = Math.max(5, (bufferMeters / scaleInfo.mPerPxAvg) * 0.7);
+    const explicitLineWidthPx = Math.max(4, (2.5 / scaleInfo.mPerPxAvg));
+
     ways.forEach(way => {
       ctx.beginPath();
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth = way.isExplicit ? explicitLineWidthPx : baseLineWidthPx;
+
       way.coords.forEach((coord, idx) => {
         const lat = coord[0];
         const lon = coord[1];
 
-        // Mapear Lat/Lon a píxeles usando proyección EPSG:3857 (Web Mercator) exacta para coincidir 1:1 con la ortofoto PNOA
         const x3857 = (lon * 20037508.34) / 180;
         const rad = (lat * Math.PI) / 180;
         const y3857 = (Math.log(Math.tan(Math.PI / 4 + rad / 2)) * 20037508.34) / Math.PI;
