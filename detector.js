@@ -70,10 +70,11 @@ class AlcorqueDetector {
 
     onProgress({ stage: 'BLOB_DETECTION', percent: 90, message: 'Detectando componentes conexas y centroides de alcorques...' });
 
-    // 6. Extracción de blobs y centroides
+    // 6. Extracción de blobs y centroides (restringidos 100% a la acera)
     const blobs = this.extractBlobsAndCentroids(
       filteredVegetationMask,
       ndviResult.ndviValues,
+      sidewalkBufferMask,
       width,
       height,
       bbox,
@@ -487,7 +488,7 @@ out skel qt;`;
   /**
    * Componentes conexas y extracción de centroides (Blobs)
    */
-  extractBlobsAndCentroids(binaryMask, ndviValues, width, height, bbox, scaleInfo, minAreaM2, maxAreaM2) {
+  extractBlobsAndCentroids(binaryMask, ndviValues, sidewalkBufferMask, width, height, bbox, scaleInfo, minAreaM2, maxAreaM2) {
     const visited = new Uint8Array(width * height);
     const blobs = [];
     let blobIdCounter = 1;
@@ -501,11 +502,11 @@ out skel qt;`;
           const queue = [idx];
           visited[idx] = 1;
 
-          let sumX = 0;
-          let sumY = 0;
-          let pixelCount = 0;
+          let sumSidewalkX = 0;
+          let sumSidewalkY = 0;
+          let sidewalkPixelCount = 0;
+          let totalPixelCount = 0;
           let sumNdvi = 0;
-          let minX = x, maxX = x, minY = y, maxY = y;
 
           let head = 0;
           while (head < queue.length) {
@@ -513,17 +514,16 @@ out skel qt;`;
             const currX = currIdx % width;
             const currY = Math.floor(currIdx / width);
 
-            sumX += currX;
-            sumY += currY;
-            pixelCount++;
+            totalPixelCount++;
             sumNdvi += ndviValues[currIdx];
 
-            if (currX < minX) minX = currX;
-            if (currX > maxX) maxX = currX;
-            if (currY < minY) minY = currY;
-            if (currY > maxY) maxY = currY;
+            // Píxel estrictamente situado sobre la acera
+            if (sidewalkBufferMask && sidewalkBufferMask[currIdx] === 1) {
+              sumSidewalkX += currX;
+              sumSidewalkY += currY;
+              sidewalkPixelCount++;
+            }
 
-            // 4-Conexidad vecinos
             const neighbors = [
               currX > 0 ? currIdx - 1 : -1,
               currX < width - 1 ? currIdx + 1 : -1,
@@ -539,14 +539,20 @@ out skel qt;`;
             }
           }
 
-          // Calcular área física en m²
-          const areaM2 = pixelCount * scaleInfo.pxAreaM2;
+          // EXIGENCIA ABSOLUTA: Descartar si no tiene píxeles suficientes sobre la acera real
+          if (sidewalkPixelCount < 3) {
+            continue;
+          }
+
+          // Calcular área física sobre la acera
+          const areaM2 = sidewalkPixelCount * scaleInfo.pxAreaM2;
 
           // Filtrar por tamaño de alcorque / copa urbana
           if (areaM2 >= minAreaM2 && areaM2 <= maxAreaM2) {
-            const centroidX = sumX / pixelCount;
-            const centroidY = sumY / pixelCount;
-            const avgNdvi = sumNdvi / pixelCount;
+            // El centroide se calcula ÚNICAMENTE promediando los píxeles que están SOBRE LA ACERA
+            const centroidX = sumSidewalkX / sidewalkPixelCount;
+            const centroidY = sumSidewalkY / sidewalkPixelCount;
+            const avgNdvi = sumNdvi / totalPixelCount;
 
             // Convertir píxel a Lat/Lon con la proyección EPSG:3857 Web Mercator inversa exacta
             const bbox3857 = this.bboxToEPSG3857(bbox);
@@ -568,7 +574,7 @@ out skel qt;`;
               pixelY: Math.round(centroidY),
               areaM2: Number(areaM2.toFixed(2)),
               diameterM: Number(estimatedDiameterM.toFixed(2)),
-              pixelCount,
+              pixelCount: sidewalkPixelCount,
               meanNdvi: Number(avgNdvi.toFixed(3)),
               status: avgNdvi > 0.35 ? 'Árbol Follaje Denso' : 'Alcorque con Árbol Joven/Parcial',
               confidence: Number(Math.min(0.98, 0.70 + (avgNdvi * 0.3)).toFixed(2))
