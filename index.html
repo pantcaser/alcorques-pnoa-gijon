@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Detector de Alcorques — Inspección Visual HD (Gijón / IGN)</title>
+  
+  <!-- Leaflet GIS CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  
+  <!-- Estilos limpios y modernos -->
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- Barra Superior Paso a Paso y Deslizadores -->
+  <header class="navbar">
+    <div class="brand">
+      <div class="brand-icon">🌳</div>
+      <div class="brand-text">
+        <h1>Detector de Alcorques</h1>
+        <span>Inspección Visual HD — <span class="city-badge">Gijón</span></span>
+      </div>
+    </div>
+
+    <!-- Deslizadores de Sensibilidad y Ancho Acera -->
+    <div style="display: flex; gap: 20px; align-items: center; background: rgba(30, 41, 59, 0.8); padding: 6px 16px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1);">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span style="font-size: 0.8rem; color: #10b981; font-weight: 600;">🌱 Sensibilidad:</span>
+        <input type="range" id="rngSens" min="0.01" max="0.25" step="0.01" value="0.06" style="width: 100px; accent-color: #10b981;">
+        <span id="lblSensVal" style="font-weight: 700; color: #10b981; font-size: 0.85rem; min-width: 32px;">0.06</span>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span style="font-size: 0.8rem; color: #38bdf8; font-weight: 600;">🛣️ Acera:</span>
+        <input type="range" id="rngBuffer" min="2.0" max="10.0" step="0.5" value="5.0" style="width: 90px; accent-color: #38bdf8;">
+        <span id="lblBufferVal" style="font-weight: 700; color: #38bdf8; font-size: 0.85rem; min-width: 35px;">5.0m</span>
+      </div>
+    </div>
+
+    <!-- Botones Paso a Paso en Secuencia -->
+    <div class="nav-controls">
+      <select id="presetSelect" class="preset-select">
+        <option value="" disabled selected>Zona Gijón...</option>
+      </select>
+
+      <button id="btnStepVeg" class="btn-primary" style="padding: 7px 14px; font-size: 0.8rem;">
+        <span>🌱 Paso 2: Vegetación</span>
+      </button>
+
+      <button id="btnStepOsm" class="btn-secondary" style="padding: 7px 14px; font-size: 0.8rem; opacity: 0.5;" disabled>
+        <span>🛣️ Paso 3: Aceras</span>
+      </button>
+
+      <button id="btnStepPoints" class="btn-secondary" style="padding: 7px 14px; font-size: 0.8rem; opacity: 0.5;" disabled>
+        <span>🎯 Paso 4: Alcorques HD</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Mapa Principal y Panel Lateral Inspector -->
+  <div class="main-container">
+    <div id="map"></div>
+
+    <!-- Inspector Visual HD Flotante (Para validar a ojo) -->
+    <div id="inspectorPanel" class="inspector-panel" style="display: none;">
+      <div class="inspector-header">
+        <h3 id="inspectorTitle">🔍 Inspector Visual HD de Alcorque</h3>
+        <button id="btnCloseInspector" class="btn-close">&times;</button>
+      </div>
+
+      <div class="inspector-content">
+        <!-- Recortes de imagen HD (6.7 cm/px) -->
+        <div class="crop-views">
+          <div class="crop-box">
+            <span class="crop-label">Ortofoto PNOA HD (6.7 cm/px)</span>
+            <canvas id="cropRgbCanvas" width="220" height="220"></canvas>
+          </div>
+          <div class="crop-box">
+            <span class="crop-label">Máscara Vegetación (NDVI)</span>
+            <canvas id="cropNdviCanvas" width="220" height="220"></canvas>
+          </div>
+        </div>
+
+        <!-- Atributos -->
+        <div class="inspector-details">
+          <div><strong>ID:</strong> <span id="inspId">-</span></div>
+          <div><strong>Área Copa:</strong> <span id="inspArea">-</span> m²</div>
+          <div><strong>NDVI Medio:</strong> <span id="inspNdvi">-</span></div>
+          <div><strong>Coordenadas:</strong> <span id="inspCoords">-</span></div>
+        </div>
+
+        <!-- Botones de Validación Manual por Ojo -->
+        <div class="validation-buttons">
+          <button id="btnValid" class="btn-val btn-valid">✅ Válido (Árbol)</button>
+          <button id="btnDoubt" class="btn-val btn-doubt">⚠️ Duda (Sombra)</button>
+          <button id="btnReject" class="btn-val btn-reject">❌ No es Alcorque</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Panel Inferior Resumen -->
+    <div id="stepInfoPanel" class="bottom-panel" style="max-height: 100px; padding: 8px 16px;">
+      <div class="panel-header" style="padding: 0;">
+        <div class="kpi-row">
+          <div class="kpi-item">
+            <div>
+              <div id="lblStepTitle" style="font-weight: 700; color: #10b981; font-size: 0.95rem;">
+                Paso 1: Visor Ortofoto IGN Listo
+              </div>
+              <div id="lblStepDesc" class="kpi-lbl">
+                Haz clic en "Paso 2: Vegetación" para iniciar la secuencia.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 16px; align-items: center;">
+          <div id="kpiStats" style="font-weight: 600; font-size: 0.85rem; color: var(--text-main);">
+            Alcorques: <span id="valCount" style="color: #34d399;">0 Válidos</span> | <span id="doubtCount" style="color: #fbbf24;">0 Duda</span> | <span id="rejCount" style="color: #f87171;">0 Descartados</span>
+          </div>
+
+          <button id="btnExportGeoJSON" class="btn-secondary" style="font-size: 0.75rem; padding: 4px 10px;">
+            📥 Exportar GeoJSON
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- External GIS Scripts -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  
+  <!-- App Scripts -->
+  <script src="presets.js"></script>
+  <script src="detector.js"></script>
+  <script src="export.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

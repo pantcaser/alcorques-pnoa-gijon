@@ -1,0 +1,14 @@
+{
+  "name": "alcorques-pnoa-gijon",
+  "version": "1.0.0",
+  "description": "Prueba de concepto para la detección de alcorques urbanos en Gijón y España con PNOA-IRC (IGN) y OpenStreetMap",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "cors": "^2.8.5"
+  }
+}
